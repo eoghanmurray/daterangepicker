@@ -41,6 +41,7 @@
         this.maxSpan = false;
         this.autoApply = false;
         this.singleDatePicker = false;
+        this.singleCalendar = false;
         this.showDropdowns = false;
         this.minYear = moment().subtract(100, 'year').format('YYYY');
         this.maxYear = moment().add(100, 'year').format('YYYY');
@@ -96,26 +97,40 @@
         //data-api options will be overwritten with custom javascript options
         options = $.extend(this.element.data(), options);
 
+        if (typeof options.singleCalendar === 'boolean') {
+            this.singleCalendar = options.singleCalendar;
+        }
+
         //html template for the picker UI
-        if (typeof options.template !== 'string' && !(options.template instanceof $))
+        if (typeof options.template !== 'string' && !(options.template instanceof $)) {
             options.template =
             '<div class="daterangepicker">' +
-                '<div class="ranges"></div>' +
+                '<div class="ranges"></div>';
+            if (!this.singleCalendar) {
+                options.template +=
                 '<div class="drp-calendar left">' +
                     '<div class="calendar-table"></div>' +
-                    '<div class="calendar-time"></div>' +
-                '</div>' +
+                    '<div class="calendar-time left-calendar-time"></div>' +
+                '</div>';
+            }
+            options.template +=
                 '<div class="drp-calendar right">' +
-                    '<div class="calendar-table"></div>' +
-                    '<div class="calendar-time"></div>' +
-                '</div>' +
+                    '<div class="calendar-table"></div>';
+            if (this.singleCalendar) {
+                options.template +=
+                    '<div class="calendar-time left-calendar-time"></div>';
+            }
+            options.template +=
+                '<div class="calendar-time right-calendar-time"></div>' +
+            '</div>';
+            options.template +=
                 '<div class="drp-buttons">' +
                     '<span class="drp-selected"></span>' +
                     '<button class="cancelBtn" type="button"></button>' +
                     '<button class="applyBtn" disabled="disabled" type="button"></button> ' +
                 '</div>' +
             '</div>';
-
+        }
         this.parentEl = (options.parentEl && $(options.parentEl).length) ? $(options.parentEl) : $(this.parentEl);
         this.container = $(options.template).appendTo(this.parentEl);
 
@@ -370,6 +385,10 @@
             this.container.find('.calendar-time').hide();
         }
 
+        // don't make sense together
+        if (this.singleCalendar)
+            this.linkedCalendars = false;
+
         //can't be used together for now
         if (this.timePicker && this.autoApply)
             this.autoApply = false;
@@ -526,9 +545,9 @@
                 this.renderTimePicker('left');
                 this.renderTimePicker('right');
                 if (!this.endDate) {
-                    this.container.find('.right .calendar-time select').prop('disabled', true).addClass('disabled');
+                    this.container.find('.right-calendar-time select').prop('disabled', true).addClass('disabled');
                 } else {
-                    this.container.find('.right .calendar-time select').prop('disabled', false).removeClass('disabled');
+                    this.container.find('.right-calendar-time select').prop('disabled', false).removeClass('disabled');
                 }
             }
             if (this.endDate)
@@ -539,8 +558,21 @@
         },
 
         updateMonthsInView: function() {
-            if (this.endDate) {
-
+            if (this.singleCalendar) {
+                if (this.endDate) {
+                    if (this.rightCalendar.month &&
+                        this.startDate.format('YYYY-MM') == this.rightCalendar.month.format('YYYY-MM') &&
+                        this.endDate.format('YYYY-MM') == this.rightCalendar.month.format('YYYY-MM')
+                       ) {
+                        return;
+                    }
+                    this.rightCalendar.month = this.endDate.clone().date(2);
+                } else {
+                    if (this.rightCalendar.month.format('YYYY-MM') != this.startDate.format('YYYY-MM')) {
+                        this.rightCalendar.month = this.startDate.clone().date(2);
+                    }
+                }
+            } else if (this.endDate) {
                 //if both dates are visible already, do nothing
                 if (!this.singleDatePicker && this.leftCalendar.month && this.rightCalendar.month &&
                     (this.startDate.format('YYYY-MM') == this.leftCalendar.month.format('YYYY-MM') || this.startDate.format('YYYY-MM') == this.rightCalendar.month.format('YYYY-MM'))
@@ -606,7 +638,8 @@
                 this.rightCalendar.month.hour(hour).minute(minute).second(second);
             }
 
-            this.renderCalendar('left');
+            if (!this.singleCalendar)
+                this.renderCalendar('left');
             this.renderCalendar('right');
 
             //highlight any predefined range matching the current start and end dates
@@ -685,7 +718,7 @@
             // Display the calendar
             //
 
-            var minDate = side == 'left' ? this.minDate : this.startDate;
+            var minDate = (side == 'left' || this.singleCalendar) ? this.minDate : this.startDate;
             var maxDate = this.maxDate;
             var selected = side == 'left' ? this.startDate : this.endDate;
             var arrow = this.locale.direction == 'ltr' ? {left: 'chevron-left', right: 'chevron-right'} : {left: 'chevron-right', right: 'chevron-left'};
@@ -698,7 +731,7 @@
             if (this.showWeekNumbers || this.showISOWeekNumbers)
                 html += '<th></th>';
 
-            if ((!minDate || minDate.isBefore(calendar.firstDay)) && (!this.linkedCalendars || side == 'left')) {
+            if ((!minDate || minDate.isBefore(calendar.firstDay)) && (!this.linkedCalendars || side == 'left' || this.singleCalendar)) {
                 html += '<th class="prev available"><span></span></th>';
             } else {
                 html += '<th></th>';
@@ -869,7 +902,7 @@
                 minDate = this.startDate;
 
                 //Preserve the time already selected
-                var timeSelector = this.container.find('.drp-calendar.right .calendar-time');
+                var timeSelector = this.container.find('.drp-calendar .right-calendar-time');
                 if (timeSelector.html() != '') {
 
                     selected.hour(!isNaN(selected.hour()) ? selected.hour() : timeSelector.find('.hourselect option:selected').val());
@@ -1007,8 +1040,7 @@
                 html += '</select>';
             }
 
-            this.container.find('.drp-calendar.' + side + ' .calendar-time').html(html);
-
+            this.container.find('.drp-calendar .' + side + '-calendar-time').html(html);
         },
 
         updateFormInputs: function() {
@@ -1497,7 +1529,8 @@
             this.updateFormInputs();
 
             //re-render the time pickers because changing one selection can affect what's enabled in another
-            this.renderTimePicker('left');
+            if (!this.singleCalendar)
+                this.renderTimePicker('left');
             this.renderTimePicker('right');
 
         },
